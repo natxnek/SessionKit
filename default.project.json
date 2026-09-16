@@ -1,0 +1,19 @@
+{
+  "name": "SessionKit",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "SessionKit": {
+        "$path": "src"
+      },
+      "Packages": {
+        "$path": "Packages/"
+      }
+    },
+    "ServerScriptService": {
+      "ServerPackages": {
+        "$path": "ServerPackages/"
+      }
+    }
+  }
+}

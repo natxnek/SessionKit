@@ -1,0 +1,282 @@
+--!strict
+--[[
+    @author nat
+    @date 15-09-26
+
+    Value class
+]]
+local Value = {}
+
+--#region Types
+--Generic callback shape shared by every event below
+export type ValueOnChange<T> = (new: T, old: T) -> ()
+
+--Dictionary
+export type ValueOnKeyAdded<T> = (key: string, value: T) -> ()
+export type ValueOnKeyRemoved<T> = (key: string, value: T) -> ()
+
+--Arrays
+export type ValueOnArrayInsert<T> = (value: T, index: number) -> ()
+export type ValueOnArrayRemove<T> = (value: T, index: number) -> ()
+
+--Metas
+--Methods available on every Value regardless of what it wraps
+export type ValueGenericMeta<T> = {
+    OnChange: (callback: ValueOnChange<T>) -> () -> (),
+}
+--Extra methods available when the wrapped value is a dictionary ({ [string]: T })
+export type ValueDictionaryMeta<T> = {
+    OnKeyAdded: (callback: ValueOnKeyAdded<T>) -> () -> (),
+    OnKeyRemoved: (callback: ValueOnKeyRemoved<T>) -> () -> (),
+}
+--Extra methods available when the wrapped value is an array ({ T })
+export type ValueArrayMeta<T, U> = ValueGenericMeta<T> & {
+    Insert: (value: U, index: number?) -> number?,
+    Remove: (index: number) -> U,
+
+    OnInsert: (callback: ValueOnArrayInsert<U>) -> () -> (),
+    OnRemove: (callback: ValueOnArrayRemove<U>) -> () -> (),
+}
+
+--Value type function (picks the value type based on the given generic type)
+--Recursively builds the correct Value<T> shape depending on whether T is a
+--primitive, an array, or a dictionary/struct, so children get typed Values too
+export type function ValueType(T)
+    local base = ValueBase(T)
+    if not T:is("table") then
+        return base
+    end
+
+    local indexer = T:indexer()
+    if indexer then --{ [string]: T } or { any }
+        local new = types.newtable()
+        local index = indexer.index
+        local result = indexer.readresult
+        
+        local valueBase = if index:is("number")
+            then ValueArrayMeta(T, result)
+            else types.intersectionof(ValueDictionaryMeta(result), base)
+
+        new:setindexer(index, ValueType(result))
+        return types.intersectionof(valueBase, new)
+    else --{ a: x, b: y, c: z }
+        local children = types.newtable()
+        for key, prop in T:properties() do
+            children:setproperty(key, ValueType(prop.read))
+        end
+
+        return types.intersectionof(base, children, ValueDictionaryMeta(types.any))
+    end
+end
+
+--Base callable signature: call with no args to read, with a value (or updater function taking the current value)
+--to write, optionally flagging replication
+export type ValueBase<T> = ((value: (T | (current: T) -> T)?, replicate: boolean? ) -> T) & ValueGenericMeta<T>
+export type Value<T> = ValueType<T>
+--#endregion
+
+--Constants
+const KEY_KEY = "___K" --key this Value occupies in its parent container
+const PARENT_KEY = "___P" --parent Value, used to bubble changes upward
+const CONTAINER_KEY = "___X" --the raw table this Value reads/writes through
+const CHILDREN_KEY = "___C" --cache of child Values already created via indexing
+const CHANGED_KEY = "_ChangedCallbacks"
+const ARRAY_INSERTED_KEY = "_OnInsertCallbacks"
+const ARRAY_REMOVED_KEY = "_OnRemoveCallbacks"
+const KEY_ADDED_KEY = "_OnKeyAddedCallbacks"
+const KEY_REMOVED_KEY = "_OnKeyRemovedCallbacks"
+
+--Bubbles a change up through every parent Value, not just the one that was set
+local function fireChanged(value: Value<any>, oldValue: any)
+    local currentValue: any = value
+    while currentValue do
+        local changedCallbacks = rawget(currentValue, CHANGED_KEY)
+        if changedCallbacks then
+            --re-read the current value fresh for each ancestor, since each
+            --ancestor's "new value" is its own current table, not oldValue
+            local newValue = (currentValue :: any)()
+            for _, callback in changedCallbacks do
+                task.spawn(callback, newValue, oldValue)
+            end
+        end
+        currentValue = rawget(currentValue, PARENT_KEY)
+    end
+end
+
+--Registers a callback under this raw key, returns an unsubscribe function
+local function createRegistrar(callbackListKey: string)
+    return function(value: Value<any>)
+        return function(callback: (...any) -> ())
+            local callbacks = rawget(value :: any, callbackListKey)
+            if not callbacks then
+                callbacks = {}
+                rawset(value :: any, callbackListKey, callbacks)
+            end
+            table.insert(callbacks, callback)
+
+            --unsubscribe function closes over `callback` to find and remove it
+            return function()
+                local currentCallbacks = rawget(value :: any, callbackListKey)
+                if not currentCallbacks then
+                    return
+                end
+                local callbackIndex = table.find(currentCallbacks, callback)
+                if callbackIndex then
+                    table.remove(currentCallbacks, callbackIndex)
+                end
+            end
+        end
+    end
+end
+
+--each of these is a function(value) -> function(callback) -> unsubscribe,
+--built once per event type via the shared registrar factory above
+const OnChange = createRegistrar(CHANGED_KEY)
+const OnInsert = createRegistrar(ARRAY_INSERTED_KEY)
+const OnRemove = createRegistrar(ARRAY_REMOVED_KEY)
+const OnKeyAdded = createRegistrar(KEY_ADDED_KEY)
+const OnKeyRemoved = createRegistrar(KEY_REMOVED_KEY)
+
+--Array insert registrar
+local function ArrayInsert(value: Value<any>)
+    return function(item: any, position: number?)
+        local raw = value()
+        if position then
+            table.insert(raw, position, item)
+        else
+            table.insert(raw, item)
+        end
+
+        fireChanged(value, raw)
+
+        local insertedCallbacks = rawget(value :: any, ARRAY_INSERTED_KEY)
+        if insertedCallbacks then
+            local insertedAtPosition = position or #raw
+            for _, callback in insertedCallbacks do
+                task.spawn(callback, item, insertedAtPosition)
+            end
+        end
+
+        return position or #raw
+    end
+end
+
+--Array remove registrar
+local function ArrayRemove(value: Value<any>)
+    return function(position: number?)
+        local raw = value()
+        local removedItem = table.remove(raw, position)
+
+        fireChanged(value, raw)
+
+        local removedCallbacks = rawget(value :: any, ARRAY_REMOVED_KEY)
+        if removedCallbacks then
+            --table.remove already shifted the array down, so the removed
+            --index (when unspecified) was the old last slot, #raw + 1
+            local removedFromPosition = position or (#raw + 1)
+            for _, callback in removedCallbacks do
+                task.spawn(callback, removedItem, removedFromPosition)
+            end
+        end
+
+        return removedItem
+    end
+end
+
+--Maps method names accessible on a Value to the factory that builds them
+const VALUE_FUNCTIONAL_KEYS = {
+    OnChange = OnChange,
+    Insert = ArrayInsert,
+    Remove = ArrayRemove,
+    OnInsert = OnInsert,
+    OnRemove = OnRemove,
+    OnKeyAdded = OnKeyAdded,
+    OnKeyRemoved = OnKeyRemoved,
+}
+
+--__index metamethod: handles both method access and child Value creation/caching for plain keys
+local function onValueIndex(value: Value<any>, index: string)
+    local functionalKey = VALUE_FUNCTIONAL_KEYS[index]
+    if functionalKey then
+        return functionalKey(value)
+    end
+
+    local raw = value()
+    assert(typeof(raw) == "table", `Attempted to index '{rawget(value :: any, KEY_KEY)}' ({typeof(raw)}) with '{index}'({typeof(index)})`)
+
+    --reuse a previously created child Value for this key if one exists
+    local children = rawget(value :: any, CHILDREN_KEY)
+    if children and children[index] ~= nil then
+        return children[index]
+    end
+
+    --otherwise lazily create and cache a new child Value pointing at `raw[index]`
+    local newChild = Value.new<<any>>(raw, index, value)
+    if not children then
+        children = {}
+        rawset(value :: any, CHILDREN_KEY, children)
+    end
+    children[index] = newChild
+
+    return newChild
+end
+
+--__call metamethod: calling a Value with no args reads it, calling it with
+--a value (or an updater function of the current value) writes it and fires
+--the appropriate change/added/removed callbacks
+local function onValueCall(value: Value<any>, ...)
+    local rawParent = rawget(value :: any, CONTAINER_KEY)
+    local key = rawget(value :: any, KEY_KEY)
+    local raw = if key ~= nil then rawParent[key] else rawParent
+
+    if select("#", ...) == 0 then
+        --no arguments passed, treat this as a read
+        return raw
+    end
+
+    local param = ...
+    local newValue = if typeof(param) == "function" then (param :: any)(raw) else param
+    rawParent[key] = newValue
+
+    if key ~= nil then
+        local parent = rawget(value :: any, PARENT_KEY)
+        if parent then
+            --only the direct parent (a dictionary Value) gets
+            --key-added/removed notifications, based on nil transitions
+            if raw == nil and newValue ~= nil then
+                local addedCallbacks = rawget(parent :: any, KEY_ADDED_KEY)
+                if addedCallbacks then
+                    for _, callback in addedCallbacks do
+                        task.spawn(callback, key, newValue)
+                    end
+                end
+            elseif raw ~= nil and newValue == nil then
+                local removedCallbacks = rawget(parent :: any, KEY_REMOVED_KEY)
+                if removedCallbacks then
+                    for _, callback in removedCallbacks do
+                        task.spawn(callback, key, raw)
+                    end
+                end
+            end
+        end
+    end
+
+    fireChanged(value, raw)
+    return newValue
+end
+
+--Value constructor, should used internally
+--`raw` is the container this Value reads/writes through (parent table, or the root table itself when key is nil)
+--`key` is nil for the root Value
+function Value.new<T>(raw: T, key: string?, parent: Value<any>?): Value<T>
+    return setmetatable({
+        [KEY_KEY] = key,
+        [PARENT_KEY] = parent,
+        [CONTAINER_KEY] = raw,
+    }, {
+        __index = onValueIndex,
+        __call = onValueCall,
+    }) :: any
+end
+
+return Value
