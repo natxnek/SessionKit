@@ -11,15 +11,17 @@ local SessionKitServer = {} :: SessionKitServerPrivate<any>
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
---Modules
-local ProfileStore = require("@game/ServerScriptService/ServerPackages/ProfileStore")
-local Signal = require("../../Packages/Signal")
-local ServerSession = require("../classes/ServerSession")
-
 --Require guard
 if not RunService:IsServer() then
     return {}
 end
+
+--Modules
+local ProfileStore = require("@game/ServerScriptService/ServerPackages/ProfileStore")
+local Signal = require("../../Packages/Signal")
+local ServerSession = require("../classes/ServerSession")
+local SessionKitNamespace = require("../networking/SessionKitNamespace")
+local SessionKitTypes = require("../shared/SessionKitTypes")
 
 --Types
 export type Session<T> = ServerSession.Session<T>
@@ -48,25 +50,26 @@ export type SessionKitServerPrivate<T> = SessionKitServerModule<T> & {
     },
 
     _awaitSignals: { [Player]: Signal.Signal<Session<T>> },
-
-    initialize: (template: T, options) -> SessionKitServerModule<T>,
+    
+    --functions
+    initialize: (template: T, options: SessionKitTypes.SessionKitOptions?) -> SessionKitServerModule<T>,
 }
 
+--Removes the player profile and closes the profile's session
 local function removePlayer(player: Player)
-    local session = SessionKitServer._sessions[player] :: ServerSession.Session<any>
-    if not session then
+    local optionalSession = SessionKitServer._sessions[player]
+    if not optionalSession then
         return
     end
 
-    --something's bugging out and session is nil lol, 
-    local reallySession = ((session :: any) :: ServerSession.Session<any>)
-
+    --something's bugging out and session is nil lol
+    local session = ((optionalSession :: any) :: ServerSession.Session<any>)
     for _, callback in SessionKitServer._connectedCallbacks.close do
-        task.spawn(callback, reallySession)
+        task.spawn(callback, session)
     end
 
-    if reallySession.profile then
-        reallySession.profile:EndSession()
+    if session.profile then
+        session.profile:EndSession()
     end
 
     SessionKitServer._sessions[player] = nil
@@ -85,6 +88,9 @@ local function loadPlayer(player: Player)
         player:Kick("Failed to load data")
         return
     end
+
+    profile:Reconcile()
+    profile:AddUserId(player.UserId)
 
     profile.OnSessionEnd:Connect(function()
         if SessionKitServer._sessions[player] then
@@ -137,11 +143,11 @@ function SessionKitServer.awaitGetSession<T>(player)
     local awaitSignal = (SessionKitServer._awaitSignals[player] or Signal.new()) :: Signal.Signal<Session<T>>
     SessionKitServer._awaitSignals[player] = awaitSignal
 
-    return SessionKitServer._sessions[player] or awaitSignal:Wait() --double check, idk why, could possibly be removed
+    return SessionKitServer._sessions[player] or awaitSignal:Wait() --double check, idk why, this can probably be removed
 end
 
 --Initializes the session kit server module
-function SessionKitServer.initialize(template)
+function SessionKitServer.initialize(template, options)
     if SessionKitServer._loaded then
         return SessionKitServer
     end
@@ -154,7 +160,7 @@ function SessionKitServer.initialize(template)
         close = {}
     }
 
-    SessionKitServer._store = ProfileStore.New("default", template)
+    SessionKitServer._store = ProfileStore.New((options and options.storeName) and options.storeName or "default", template)
 
     Players.PlayerAdded:Connect(loadPlayer)
     Players.PlayerRemoving:Connect(removePlayer)
@@ -162,6 +168,21 @@ function SessionKitServer.initialize(template)
     for _, player in Players:GetPlayers() do
         task.spawn(loadPlayer, player)
     end
+
+    SessionKitNamespace.queries.GetData.listen(function(request, player)
+        if not player then
+            return nil
+        end
+        
+        local nillableSession = SessionKitServer._sessions[player]
+        if not nillableSession then
+            return nil
+        end
+
+        --what the fuck is wrong with my intellisense, like the autocomplete is empty for the earlier session bruh
+        local session = (nillableSession :: any) :: Session<any>
+        return session.profile.Data
+    end)
 
     return SessionKitServer
 end

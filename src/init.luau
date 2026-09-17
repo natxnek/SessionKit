@@ -15,19 +15,15 @@ local RunService = game:GetService("RunService")
 --Modules
 local SessionKitServer = require("@self/core/SessionKitServer")
 local SessionKitClient = require("@self/core/SessionKitClient")
-
---Types
-export type SessionKitOptions = {
-    storeName: string
-}
+local SessionKitTypes = require("@self/shared/SessionKitTypes")
 
 --The return
-return function<T>(template: T, options: SessionKitOptions?)
+return function<T>(template: T, options: SessionKitTypes.SessionKitOptions?)
     local server = SessionKitServer :: SessionKitServer.SessionKitServerPrivate<T>
-    local client = SessionKitClient :: SessionKitClient.SessionKitClientModule<T>
-
+    local client = SessionKitClient :: SessionKitClient.SessionKitClientPrivate<T>
+    
     return {
         server = (if RunService:IsServer() then server.initialize(template, options) else {}) :: SessionKitServer.SessionKitServerModule<T>,
-        client = client,
+        client = (if RunService:IsClient() then client.initialize(template, options) else {}) :: SessionKitClient.SessionKitClientModule<T>,
     }
 end

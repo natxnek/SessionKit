@@ -5,4 +5,7 @@
 
     Shared skit types
 ]]
+export type SessionKitOptions = {
+    storeName: string?
+}
 return {}

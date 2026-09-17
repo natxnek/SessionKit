@@ -8,34 +8,27 @@
 local Value = {}
 
 --#region Types
---Generic callback shape shared by every event below
-export type ValueOnChange<T> = (new: T, old: T) -> ()
-
---Dictionary
-export type ValueOnKeyAdded<T> = (key: string, value: T) -> ()
-export type ValueOnKeyRemoved<T> = (key: string, value: T) -> ()
-
---Arrays
-export type ValueOnArrayInsert<T> = (value: T, index: number) -> ()
-export type ValueOnArrayRemove<T> = (value: T, index: number) -> ()
+export type ValueOnChangeEvent<T> = (new: T, old: T) -> ()
+export type ValueOnKeyEvent<T> = (key: string, value: T) -> ()
+export type ValueOnArrayEvent<T> = (value: T, index: number) -> ()
 
 --Metas
 --Methods available on every Value regardless of what it wraps
 export type ValueGenericMeta<T> = {
-    OnChange: (callback: ValueOnChange<T>) -> () -> (),
+    OnChange: (callback: ValueOnChangeEvent<T>) -> () -> (),
 }
 --Extra methods available when the wrapped value is a dictionary ({ [string]: T })
 export type ValueDictionaryMeta<T> = {
-    OnKeyAdded: (callback: ValueOnKeyAdded<T>) -> () -> (),
-    OnKeyRemoved: (callback: ValueOnKeyRemoved<T>) -> () -> (),
+    OnKeyAdded: (callback: ValueOnKeyEvent<T>) -> () -> (),
+    OnKeyRemoved: (callback: ValueOnKeyEvent<T>) -> () -> (),
 }
 --Extra methods available when the wrapped value is an array ({ T })
-export type ValueArrayMeta<T, U> = ValueGenericMeta<T> & {
+export type ValueArrayMeta<T, U> = {
     Insert: (value: U, index: number?) -> number?,
     Remove: (index: number) -> U,
 
-    OnInsert: (callback: ValueOnArrayInsert<U>) -> () -> (),
-    OnRemove: (callback: ValueOnArrayRemove<U>) -> () -> (),
+    OnInsert: (callback: ValueOnArrayEvent<U>) -> () -> (),
+    OnRemove: (callback: ValueOnArrayEvent<U>) -> () -> (),
 }
 
 --Value type function (picks the value type based on the given generic type)
@@ -54,7 +47,7 @@ export type function ValueType(T)
         local result = indexer.readresult
         
         local valueBase = if index:is("number")
-            then ValueArrayMeta(T, result)
+            then types.intersectionof(ValueArrayMeta(T, result), base)
             else types.intersectionof(ValueDictionaryMeta(result), base)
 
         new:setindexer(index, ValueType(result))
@@ -69,10 +62,14 @@ export type function ValueType(T)
     end
 end
 
---Base callable signature: call with no args to read, with a value (or updater function taking the current value)
---to write, optionally flagging replication
+--Base callable signature: call with no args to read, with a value
+--(or updater function taking the current value) to write, optionally flagging replication
 export type ValueBase<T> = ((value: (T | (current: T) -> T)?, replicate: boolean? ) -> T) & ValueGenericMeta<T>
 export type Value<T> = ValueType<T>
+
+--Replications
+export type ReplicateOperation = "Set" | "Insert" | "Remove"
+export type ReplicateSink = (path: { string }, operation: ReplicateOperation, a: any, b: any?) -> ()
 --#endregion
 
 --Constants
@@ -80,14 +77,30 @@ const KEY_KEY = "___K" --key this Value occupies in its parent container
 const PARENT_KEY = "___P" --parent Value, used to bubble changes upward
 const CONTAINER_KEY = "___X" --the raw table this Value reads/writes through
 const CHILDREN_KEY = "___C" --cache of child Values already created via indexing
+const REPLICATE_KEY = "___S" --replication sink, inherited from parent
 const CHANGED_KEY = "_ChangedCallbacks"
 const ARRAY_INSERTED_KEY = "_OnInsertCallbacks"
 const ARRAY_REMOVED_KEY = "_OnRemoveCallbacks"
 const KEY_ADDED_KEY = "_OnKeyAddedCallbacks"
 const KEY_REMOVED_KEY = "_OnKeyRemovedCallbacks"
 
+--Walks KEY_KEY/PARENT_KEY back to the root to build this Value's path
+const function getPath(value: Value<any>): { string }
+    local path = {}
+    local current = value
+    while true do
+        local key = rawget(current :: any, KEY_KEY)
+        if key == nil then
+            break
+        end
+        table.insert(path, 1, key)
+        current = rawget(current :: any, PARENT_KEY)
+    end
+    return path
+end
+
 --Bubbles a change up through every parent Value, not just the one that was set
-local function fireChanged(value: Value<any>, oldValue: any)
+const function fireChanged(value: Value<any>, oldValue: any)
     local currentValue: any = value
     while currentValue do
         local changedCallbacks = rawget(currentValue, CHANGED_KEY)
@@ -104,7 +117,7 @@ local function fireChanged(value: Value<any>, oldValue: any)
 end
 
 --Registers a callback under this raw key, returns an unsubscribe function
-local function createRegistrar(callbackListKey: string)
+const function createRegistrar(callbackListKey: string)
     return function(value: Value<any>)
         return function(callback: (...any) -> ())
             local callbacks = rawget(value :: any, callbackListKey)
@@ -149,36 +162,46 @@ local function ArrayInsert(value: Value<any>)
 
         fireChanged(value, raw)
 
+        local insertedAtPosition = position or #raw
         local insertedCallbacks = rawget(value :: any, ARRAY_INSERTED_KEY)
         if insertedCallbacks then
-            local insertedAtPosition = position or #raw
             for _, callback in insertedCallbacks do
                 task.spawn(callback, item, insertedAtPosition)
             end
         end
 
-        return position or #raw
+        local sink: ReplicateSink = rawget(value :: any, REPLICATE_KEY)
+        if typeof(sink) == 'function' then
+            sink(getPath(value), "Insert", item, insertedAtPosition)
+        end
+
+        return insertedAtPosition
     end
 end
 
 --Array remove registrar
-local function ArrayRemove(value: Value<any>)
+const function ArrayRemove(value: Value<any>)
     return function(position: number?)
         local raw = value()
         local removedItem = table.remove(raw, position)
 
         fireChanged(value, raw)
 
+        local removedFromPosition = position or (#raw + 1)
         local removedCallbacks = rawget(value :: any, ARRAY_REMOVED_KEY)
         if removedCallbacks then
             --table.remove already shifted the array down, so the removed
             --index (when unspecified) was the old last slot, #raw + 1
-            local removedFromPosition = position or (#raw + 1)
             for _, callback in removedCallbacks do
                 task.spawn(callback, removedItem, removedFromPosition)
             end
         end
 
+        local sink: ReplicateSink = rawget(value :: any, REPLICATE_KEY)
+        if typeof(sink) == 'function' then
+            sink(getPath(value), "Remove", nil, removedFromPosition)
+        end
+        
         return removedItem
     end
 end
@@ -195,8 +218,8 @@ const VALUE_FUNCTIONAL_KEYS = {
 }
 
 --__index metamethod: handles both method access and child Value creation/caching for plain keys
-local function onValueIndex(value: Value<any>, index: string)
-    local functionalKey = VALUE_FUNCTIONAL_KEYS[index]
+const function onValueIndex(value: Value<any>, index: string)
+    const functionalKey = VALUE_FUNCTIONAL_KEYS[index]
     if functionalKey then
         return functionalKey(value)
     end
@@ -224,7 +247,7 @@ end
 --__call metamethod: calling a Value with no args reads it, calling it with
 --a value (or an updater function of the current value) writes it and fires
 --the appropriate change/added/removed callbacks
-local function onValueCall(value: Value<any>, ...)
+const function onValueCall(value: Value<any>, ...)
     local rawParent = rawget(value :: any, CONTAINER_KEY)
     local key = rawget(value :: any, KEY_KEY)
     local raw = if key ~= nil then rawParent[key] else rawParent
@@ -234,42 +257,47 @@ local function onValueCall(value: Value<any>, ...)
         return raw
     end
 
-    local param = ...
+    local param, replicate = ...
     local newValue = if typeof(param) == "function" then (param :: any)(raw) else param
-    rawParent[key] = newValue
 
     if key ~= nil then
-        local parent = rawget(value :: any, PARENT_KEY)
-        if parent then
-            --only the direct parent (a dictionary Value) gets
-            --key-added/removed notifications, based on nil transitions
-            if raw == nil and newValue ~= nil then
-                local addedCallbacks = rawget(parent :: any, KEY_ADDED_KEY)
-                if addedCallbacks then
-                    for _, callback in addedCallbacks do
-                        task.spawn(callback, key, newValue)
-                    end
-                end
-            elseif raw ~= nil and newValue == nil then
-                local removedCallbacks = rawget(parent :: any, KEY_REMOVED_KEY)
-                if removedCallbacks then
-                    for _, callback in removedCallbacks do
-                        task.spawn(callback, key, raw)
-                    end
-                end
-            end
+        rawParent[key] = newValue
+    else
+        assert(
+            typeof(raw) == "table" and typeof(newValue) == "table",
+            "Root Value must be set to a table"
+        )
+
+        local oldSnapshot = table.clone(raw)
+
+        for k in pairs(raw) do
+            raw[k] = nil
         end
+        for k, v in pairs(newValue) do
+            raw[k] = v
+        end
+
+        fireChanged(value, oldSnapshot)
+        return newValue
     end
 
     fireChanged(value, raw)
+
+    if replicate ~= false then
+        local sink: ReplicateSink = rawget(value :: any, REPLICATE_KEY)
+        if typeof(sink) == 'function' then
+            sink(getPath(value), "Set", newValue)
+        end
+    end
     return newValue
 end
 
 --Value constructor, should used internally
 --`raw` is the container this Value reads/writes through (parent table, or the root table itself when key is nil)
 --`key` is nil for the root Value
-function Value.new<T>(raw: T, key: string?, parent: Value<any>?): Value<T>
-    return setmetatable({
+--`replicateSink` is the function that runs whenever value wants to replicate to the client
+function Value.new<T>(raw: T, key: string?, parent: Value<any>?, replicateSink: ReplicateSink?): Value<T>
+    local self = setmetatable({
         [KEY_KEY] = key,
         [PARENT_KEY] = parent,
         [CONTAINER_KEY] = raw,
@@ -277,6 +305,16 @@ function Value.new<T>(raw: T, key: string?, parent: Value<any>?): Value<T>
         __index = onValueIndex,
         __call = onValueCall,
     }) :: any
+
+    --explicit sink wins (root), otherwise inherit from parent so every
+    --descendant Value can reach it without walking the tree each write
+    if replicateSink then
+        rawset(self, REPLICATE_KEY, replicateSink)
+    elseif parent then
+        rawset(self, REPLICATE_KEY, rawget(parent :: any, REPLICATE_KEY))
+    end
+
+    return self
 end
 
 return Value
