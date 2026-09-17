@@ -54,7 +54,7 @@ function SessionKitClient.initialize<T>(template, options)
     SessionKitClient._initialDataLoaded = false
 
     --wtf is happening to the solver recently bruh, how tf is that not an error
-    SessionKitClient.data = Value.new<<T>>({})
+    SessionKitClient.data = Value.new<<T>>(template)
 
     --any packet that arrives before the initial snapshot lands is discarded
     SessionKitNamespace.packets.SetValue.listen(function(packet)

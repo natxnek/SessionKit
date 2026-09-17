@@ -12,7 +12,7 @@ ServerSession.__index = ServerSession
 local HttpService = game:GetService("HttpService")
 
 --Modules
-local ProfileStore = require("@game/ServerScriptService/ServerPackages/ProfileStore")
+local ProfileStore = require("../../ProfileStore")
 local SessionKitNamespace = require("../networking/SessionKitNamespace")
 local Value = require("./Value")
 

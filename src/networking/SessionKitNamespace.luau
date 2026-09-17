@@ -5,7 +5,7 @@
 
     SessionKit bytenet namespace
 ]]
-local bytenet = require("../../Packages/bytenet")
+local bytenet = require("../../bytenet")
 return bytenet.defineNamespace("SessionKit", function()
     return {
         queries = {

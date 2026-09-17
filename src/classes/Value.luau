@@ -101,18 +101,48 @@ end
 
 --Bubbles a change up through every parent Value, not just the one that was set
 const function fireChanged(value: Value<any>, oldValue: any)
-    local currentValue: any = value
-    while currentValue do
-        local changedCallbacks = rawget(currentValue, CHANGED_KEY)
-        if changedCallbacks then
-            --re-read the current value fresh for each ancestor, since each
-            --ancestor's "new value" is its own current table, not oldValue
-            local newValue = (currentValue :: any)()
-            for _, callback in changedCallbacks do
-                task.spawn(callback, newValue, oldValue)
+    local function hasListeners(v: Value<any>): boolean
+        if rawget(v, CHANGED_KEY) then return true end
+        local children = rawget(v, CHILDREN_KEY)
+        if children then
+            for _, child in children do
+                if hasListeners(child) then return true end
             end
         end
-        currentValue = rawget(currentValue, PARENT_KEY)
+        return false
+    end
+
+    local function fireDeep(v: Value<any>, old: any)
+        local new = (v :: any)()
+
+        local callbacks = rawget(v, CHANGED_KEY)
+        if callbacks then
+            for _, callback in callbacks do
+                task.spawn(callback, new, old)
+            end
+        end
+
+        local children = rawget(v, CHILDREN_KEY)
+        if children and typeof(old) == "table" and old ~= new then
+            for key, child in children do
+                if hasListeners(child) then
+                    fireDeep(child, old[key])
+                end
+            end
+        end
+    end
+
+    fireDeep(value, oldValue)
+
+    -- bubble up to ancestors as before
+    local current = rawget(value, PARENT_KEY) :: any
+    while current do
+        local cbs = rawget(current, CHANGED_KEY)
+        if cbs then
+            local new = (current :: any)()
+            for _, cb in cbs do task.spawn(cb, new, oldValue) end
+        end
+        current = rawget(current, PARENT_KEY)
     end
 end
 
@@ -270,10 +300,10 @@ const function onValueCall(value: Value<any>, ...)
 
         local oldSnapshot = table.clone(raw)
 
-        for k in pairs(raw) do
+        for k in raw do
             raw[k] = nil
         end
-        for k, v in pairs(newValue) do
+        for k, v in newValue do
             raw[k] = v
         end
 

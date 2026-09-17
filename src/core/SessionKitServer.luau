@@ -17,8 +17,8 @@ if not RunService:IsServer() then
 end
 
 --Modules
-local ProfileStore = require("@game/ServerScriptService/ServerPackages/ProfileStore")
-local Signal = require("../../Packages/Signal")
+local ProfileStore = require("../../ProfileStore")
+local Signal = require("../../Signal")
 local ServerSession = require("../classes/ServerSession")
 local SessionKitNamespace = require("../networking/SessionKitNamespace")
 local SessionKitTypes = require("../shared/SessionKitTypes")
