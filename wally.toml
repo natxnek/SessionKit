@@ -1,11 +1,13 @@
 [package]
-name = "natxnekk/sessionkit"
+name = "natxnek/sessionkit"
 description = "Simple ProfileStore wrapper to make replicating data easier"
 version = "0.1.0"
 license = "MIT"
 authors = ["Natt <natt@natt.cloud>"]
 registry = "https://github.com/UpliftGames/wally-index"
 realm = "shared"
+homepage = "https://github.com/natxnek/SessionKit"
+repository = "https://github.com/natxnek/SessionKit"
 
 exclude = ["**"]
 include = ["src", "src/*", "default.project.json", "wally.lock", "wally.toml", "LICENSE"]
