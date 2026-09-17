@@ -1,35 +1,6 @@
 {
-  "name": "SessionKit",
+  "name": "sessionkit",
   "tree": {
-    "$className": "DataModel",
-    "ReplicatedStorage": {
-      "SessionKit": {
-        "$path": "src"
-      },
-      "Packages": {
-        "$path": "Packages/"
-      },
-
-      "Tests": {
-        "$path": "tests/"
-      }
-    },
-    "ServerScriptService": {
-      "ServerPackages": {
-        "$path": "ServerPackages/"
-      },
-
-      "SkitTestServer": {
-        "$path": "tests/TestServer.server.luau"
-      }
-    },
-
-    "StarterPlayer": {
-      "StarterPlayerScripts": {
-        "SkitTestClient": {
-          "$path": "tests/TestClient.client.luau"
-        }
-      }
-    }
+    "$path": "src"
   }
 }
