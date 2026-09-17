@@ -37,7 +37,7 @@ export type SessionKitServerModule<T> = {
 
     --Tries to fetch a session and yields until it finds one (max 15s)
     awaitGetSession: (player: Player) -> Session<T>?,
-} & { [Player]: Session<T>? } --Direct session querying (SessionKitServer[player]) can be nil
+} & { [Player]: Session<T> } --Direct session querying (SessionKitServer[player]) can be nil
 
 export type SessionKitServerPrivate<T> = SessionKitServerModule<T> & {
     _loaded: boolean,
@@ -184,7 +184,19 @@ function SessionKitServer.initialize(template, options)
         return session.profile.Data
     end)
 
-    return SessionKitServer
+    setmetatable(SessionKitServer, {
+        __index = function(self, key): Session<any>?
+            if typeof(key) == "Instance" and key:IsA("Player") then
+                local sessions = rawget(self, "_sessions") :: { [Player]: Session<any> }
+                if sessions then
+                    return sessions[key]
+                end
+            end
+            return nil
+        end,
+    })
+
+    return SessionKitServer :: any
 end
 
 return SessionKitServer

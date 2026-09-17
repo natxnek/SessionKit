@@ -1,7 +1,7 @@
 [package]
 name = "natxnek/sessionkit"
 description = "Simple ProfileStore wrapper to make replicating data easier"
-version = "0.1.0"
+version = "0.1.2"
 license = "MIT"
 authors = ["Natt <natt@natt.cloud>"]
 registry = "https://github.com/UpliftGames/wally-index"
