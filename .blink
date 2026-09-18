@@ -1,6 +1,7 @@
 option ClientOutput = "src/networking/PacketsClient.luau"
 option ServerOutput = "src/networking/PacketsServer.luau"
 option Casing = Pascal
+option RemoteScope = "SKIT"
 
 scope SessionKit {
     --Full snapshot, sent once when a session opens on the client
