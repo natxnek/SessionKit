@@ -12,8 +12,8 @@ ServerSession.__index = ServerSession
 local HttpService = game:GetService("HttpService")
 
 --Modules
-local ProfileStore = require("../../ProfileStore")
-local SessionKitNamespace = require("../networking/SessionKitNamespace")
+const ProfileStore = require("../../ProfileStore")
+const PacketsServer = require("../networking/PacketsServer")
 local Value = require("./Value")
 
 --Types
@@ -35,11 +35,11 @@ const function getDefaultReplicationSink(player: Player): Value.ReplicateSink
     return function(path, operation, a, b)
         local encodedValue = HttpService:JSONEncode(a)
         if operation == "Set" then
-            SessionKitNamespace.packets.SetValue.sendTo({ path = path, value = encodedValue }, player)
+            PacketsServer.SessionKit.SetValue.Fire(player, path, encodedValue)
         elseif operation == "Insert" then
-            SessionKitNamespace.packets.ArrayInsert.sendTo({ path = path, value = encodedValue, index = b }, player)
+            PacketsServer.SessionKit.ArrayInsert.Fire(player, path, encodedValue, b :: number)
         elseif operation == "Remove" then
-            SessionKitNamespace.packets.ArrayRemove.sendTo({ path = path, index = b }, player)
+            PacketsServer.SessionKit.ArrayRemove.Fire(player, path, b :: number)
         end
     end
 end

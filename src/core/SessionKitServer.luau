@@ -8,6 +8,7 @@
 local SessionKitServer = {} :: SessionKitServerPrivate<any>
 
 --Services
+const HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -17,10 +18,10 @@ if not RunService:IsServer() then
 end
 
 --Modules
-local ProfileStore = require("../../ProfileStore")
-local Signal = require("../../Signal")
+const ProfileStore = require("../../ProfileStore")
+const Signal = require("../../Signal")
 local ServerSession = require("../classes/ServerSession")
-local SessionKitNamespace = require("../networking/SessionKitNamespace")
+const PacketsServer = require("../networking/PacketsServer")
 local SessionKitTypes = require("../shared/SessionKitTypes")
 
 --Types
@@ -57,13 +58,15 @@ export type SessionKitServerPrivate<T> = SessionKitServerModule<T> & {
 
 --Removes the player profile and closes the profile's session
 local function removePlayer(player: Player)
-    local optionalSession = SessionKitServer._sessions[player]
+    local optionalSession = SessionKitServer._sessions and SessionKitServer._sessions[player]
     if not optionalSession then
         return
     end
 
     --something's bugging out and session is nil lol
     local session = ((optionalSession :: any) :: ServerSession.Session<any>)
+    SessionKitServer._sessions[player] = nil
+
     for _, callback in SessionKitServer._connectedCallbacks.close do
         task.spawn(callback, session)
     end
@@ -71,8 +74,6 @@ local function removePlayer(player: Player)
     if session.profile then
         session.profile:EndSession()
     end
-
-    SessionKitServer._sessions[player] = nil
 
     if SessionKitServer._awaitSignals[player] then
         SessionKitServer._awaitSignals[player]:Destroy()
@@ -82,6 +83,10 @@ end
 
 --Loads the player's session
 local function loadPlayer(player: Player)
+    if SessionKitServer._sessions and SessionKitServer._sessions[player] then
+        return
+    end
+
     local profile = SessionKitServer._store:StartSessionAsync(`{player.UserId}`, {})
     if not profile then
         warn(`[SessionKit] Failed to load profile for {player.Name}. Kicking player`)
@@ -169,7 +174,7 @@ function SessionKitServer.initialize(template, options)
         task.spawn(loadPlayer, player)
     end
 
-    SessionKitNamespace.queries.GetData.listen(function(request, player)
+    PacketsServer.SessionKit.GetData.On(function(player)
         if not player then
             return nil
         end
@@ -181,7 +186,7 @@ function SessionKitServer.initialize(template, options)
 
         --what the fuck is wrong with my intellisense, like the autocomplete is empty for the earlier session bruh
         local session = (nillableSession :: any) :: Session<any>
-        return session.profile.Data
+        return HttpService:JSONEncode(session.profile.Data)
     end)
 
     setmetatable(SessionKitServer, {

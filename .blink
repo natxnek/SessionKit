@@ -1,0 +1,32 @@
+option ClientOutput = "src/networking/PacketsClient.luau"
+option ServerOutput = "src/networking/PacketsServer.luau"
+option Casing = Pascal
+
+scope SessionKit {
+    --Full snapshot, sent once when a session opens on the client
+    function GetData {
+        Yield: Coroutine,
+        Return: string?,
+    }
+
+    event SetValue {
+        From: Server,
+        Type: Reliable,
+        Call: SingleSync,
+        Data: (string[], string)
+    }
+
+    event ArrayInsert {
+        From: Server,
+        Type: Reliable,
+        Call: SingleSync,
+        Data: (string[], string, u32)
+    }
+
+    event ArrayRemove {
+        From: Server,
+        Type: Reliable,
+        Call: SingleSync,
+        Data: (string[], u32)
+    }
+}

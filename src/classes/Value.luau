@@ -146,6 +146,17 @@ const function fireChanged(value: Value<any>, oldValue: any)
     end
 end
 
+local function fireKeyEvent(container: Value<any>, listKey: string, key: string, valueAtKey: any)
+    local callbacks = rawget(container :: any, listKey)
+    if not callbacks then
+        return
+    end
+
+    for _, callback in callbacks do
+        task.spawn(callback, key, valueAtKey)
+    end
+end
+
 --Registers a callback under this raw key, returns an unsubscribe function
 const function createRegistrar(callbackListKey: string)
     return function(value: Value<any>)
@@ -174,7 +185,28 @@ end
 
 --each of these is a function(value) -> function(callback) -> unsubscribe,
 --built once per event type via the shared registrar factory above
-const OnChange = createRegistrar(CHANGED_KEY)
+local function OnChange(value: Value<any>)
+    return function(callback: ValueOnChangeEvent<any>)
+        local callbacks = rawget(value :: any, CHANGED_KEY)
+        if not callbacks then
+            callbacks = {}
+            rawset(value :: any, CHANGED_KEY, callbacks)
+        end
+        table.insert(callbacks, callback)
+
+        --unsubscribe function
+        return function()
+            local currentCallbacks = rawget(value :: any, CHANGED_KEY)
+            if not currentCallbacks then
+                return
+            end
+            local callbackIndex = table.find(currentCallbacks, callback)
+            if callbackIndex then
+                table.remove(currentCallbacks, callbackIndex)
+            end
+        end
+    end
+end
 const OnInsert = createRegistrar(ARRAY_INSERTED_KEY)
 const OnRemove = createRegistrar(ARRAY_REMOVED_KEY)
 const OnKeyAdded = createRegistrar(KEY_ADDED_KEY)
@@ -184,13 +216,14 @@ const OnKeyRemoved = createRegistrar(KEY_REMOVED_KEY)
 local function ArrayInsert(value: Value<any>)
     return function(item: any, position: number?)
         local raw = value()
+        local oldSnapshot = table.clone(raw)
         if position then
             table.insert(raw, position, item)
         else
             table.insert(raw, item)
         end
 
-        fireChanged(value, raw)
+        fireChanged(value, oldSnapshot)
 
         local insertedAtPosition = position or #raw
         local insertedCallbacks = rawget(value :: any, ARRAY_INSERTED_KEY)
@@ -213,9 +246,10 @@ end
 const function ArrayRemove(value: Value<any>)
     return function(position: number?)
         local raw = value()
+        local oldSnapshot = table.clone(raw)
         local removedItem = table.remove(raw, position)
 
-        fireChanged(value, raw)
+        fireChanged(value, oldSnapshot)
 
         local removedFromPosition = position or (#raw + 1)
         local removedCallbacks = rawget(value :: any, ARRAY_REMOVED_KEY)
@@ -291,34 +325,46 @@ const function onValueCall(value: Value<any>, ...)
     local newValue = if typeof(param) == "function" then (param :: any)(raw) else param
 
     if key ~= nil then
+        local oldValue = rawParent[key]
+        if oldValue == newValue then
+            return newValue
+        end
+
+        local owner = rawget(value :: any, PARENT_KEY) or value
         rawParent[key] = newValue
-    else
-        assert(
-            typeof(raw) == "table" and typeof(newValue) == "table",
-            "Root Value must be set to a table"
-        )
 
-        local oldSnapshot = table.clone(raw)
-
-        for k in raw do
-            raw[k] = nil
-        end
-        for k, v in newValue do
-            raw[k] = v
+        if oldValue == nil and newValue ~= nil then
+            fireKeyEvent(owner, KEY_ADDED_KEY, key, newValue)
+        elseif oldValue ~= nil and newValue == nil then
+            fireKeyEvent(owner, KEY_REMOVED_KEY, key, oldValue)
         end
 
-        fireChanged(value, oldSnapshot)
+        fireChanged(value, oldValue)
+
+        if replicate ~= false then
+            local sink: ReplicateSink = rawget(value :: any, REPLICATE_KEY)
+            if typeof(sink) == 'function' then
+                sink(getPath(value), "Set", newValue)
+            end
+        end
+
         return newValue
     end
 
-    fireChanged(value, raw)
+    assert(
+        typeof(raw) == "table" and typeof(newValue) == "table",
+        "Root Value must be set to a table"
+    )
 
-    if replicate ~= false then
-        local sink: ReplicateSink = rawget(value :: any, REPLICATE_KEY)
-        if typeof(sink) == 'function' then
-            sink(getPath(value), "Set", newValue)
-        end
+    local oldSnapshot = table.clone(raw)
+    for k in raw do
+        raw[k] = nil
     end
+    for k, v in newValue do
+        raw[k] = v
+    end
+
+    fireChanged(value, oldSnapshot)
     return newValue
 end
 

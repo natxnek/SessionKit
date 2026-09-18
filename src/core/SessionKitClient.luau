@@ -18,7 +18,7 @@ end
 
 --Modules
 local Value = require("../classes/Value")
-local SessionKitNamespace = require("../networking/SessionKitNamespace")
+const PacketsClient = require("../networking/PacketsClient")
 local SessionKitTypes = require("../shared/SessionKitTypes")
 
 --Types
@@ -57,44 +57,48 @@ function SessionKitClient.initialize<T>(template, options)
     SessionKitClient.data = Value.new<<T>>(template)
 
     --any packet that arrives before the initial snapshot lands is discarded
-    SessionKitNamespace.packets.SetValue.listen(function(packet)
+    PacketsClient.SessionKit.SetValue.On(function(path, value)
         if not SessionKitClient._initialDataLoaded then
             return
         end
 
-        local target = resolvePath(packet.path)
-        local decodedValue = HttpService:JSONDecode(packet.value :: any)
+        local target = resolvePath(path)
+        local decodedValue = HttpService:JSONDecode(value)
         target(decodedValue)
     end)
 
-    SessionKitNamespace.packets.ArrayInsert.listen(function(packet)
+    PacketsClient.SessionKit.ArrayInsert.On(function(path, value, index)
         if not SessionKitClient._initialDataLoaded then
             return
         end
 
-        local target = resolvePath(packet.path)
-        local decodedValue = HttpService:JSONDecode(packet.value :: any)
-        target.Insert(decodedValue, packet.index)
+        local target = resolvePath(path)
+        local decodedValue = HttpService:JSONDecode(value)
+        target.Insert(decodedValue, index)
     end)
 
-    SessionKitNamespace.packets.ArrayRemove.listen(function(packet)
+    PacketsClient.SessionKit.ArrayRemove.On(function(path, index)
         if not SessionKitClient._initialDataLoaded then
             return
         end
 
-        local target = resolvePath(packet.path)
-        target.Remove(packet.index)
+        local target = resolvePath(path)
+        target.Remove(index)
     end)
 
     --spent 2h debugging why this yielded even though the debug print after it ran,
     --turns out bytenet coroutine.yields after invoke for some reason. wrapped it in task.spawn and it works. i hate myself
     task.spawn(function()
-        local fetchedData = SessionKitNamespace.queries.GetData.invoke(nil)
-        if fetchedData then
-            SessionKitClient.data(fetchedData)
+        local fetchedData = PacketsClient.SessionKit.GetData.Invoke(nil)
+        if not fetchedData then
+            return
         end
+
+        local decodedData = HttpService:JSONDecode(fetchedData)
+        SessionKitClient.data(decodedData)
+        
         SessionKitClient._initialDataLoaded = true
-    end)
+    end)    
 
     return SessionKitClient
 end
