@@ -8,14 +8,14 @@
 local Value = {}
 
 --#region Types
-export type ValueOnChangeEvent<T> = (new: T, old: T) -> ()
+export type ValueOnChangeEvent<T> = (new: T, old: T?) -> ()
 export type ValueOnKeyEvent<T> = (key: string, value: T) -> ()
 export type ValueOnArrayEvent<T> = (value: T, index: number) -> ()
 
 --Metas
 --Methods available on every Value regardless of what it wraps
 export type ValueGenericMeta<T> = {
-    OnChange: (callback: ValueOnChangeEvent<T>) -> () -> (),
+    OnChange: (callback: ValueOnChangeEvent<T>, ignoreInitialData: boolean?) -> () -> (),
 }
 --Extra methods available when the wrapped value is a dictionary ({ [string]: T })
 export type ValueDictionaryMeta<T> = {
@@ -50,7 +50,7 @@ export type function ValueType(T)
             then types.intersectionof(ValueArrayMeta(T, result), base)
             else types.intersectionof(ValueDictionaryMeta(result), base)
 
-        new:setindexer(index, ValueType(result))
+        new:setindexer(index :: any, ValueType(result :: any))
         return types.intersectionof(valueBase, new)
     else --{ a: x, b: y, c: z }
         local children = types.newtable()
@@ -134,7 +134,6 @@ const function fireChanged(value: Value<any>, oldValue: any)
 
     fireDeep(value, oldValue)
 
-    -- bubble up to ancestors as before
     local current = rawget(value, PARENT_KEY) :: any
     while current do
         local cbs = rawget(current, CHANGED_KEY)
@@ -186,13 +185,20 @@ end
 --each of these is a function(value) -> function(callback) -> unsubscribe,
 --built once per event type via the shared registrar factory above
 local function OnChange(value: Value<any>)
-    return function(callback: ValueOnChangeEvent<any>)
+    return function(callback: ValueOnChangeEvent<any>, ignoreInitialData: boolean?)
         local callbacks = rawget(value :: any, CHANGED_KEY)
         if not callbacks then
             callbacks = {}
             rawset(value :: any, CHANGED_KEY, callbacks)
         end
         table.insert(callbacks, callback)
+
+        if ignoreInitialData ~= true then
+            local currentValue = (value :: any)()
+            if currentValue ~= nil then
+                task.spawn(callback, currentValue, nil)
+            end
+        end
 
         --unsubscribe function
         return function()
