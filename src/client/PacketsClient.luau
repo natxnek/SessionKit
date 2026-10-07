@@ -1,4 +1,4 @@
---!strict
+--!nonstrict
 --!native
 --!optimize 2
 --!nolint LocalShadow

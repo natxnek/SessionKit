@@ -5,11 +5,11 @@
 
     Server version of session kit
 ]]
-local SessionKitClient = ({} :: any) :: SessionKitClientPrivate<any>
+const SessionKitClient = ({} :: any) :: SessionKitClientPrivate<any>
 
 --Services
-local HttpService = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
+const HttpService = game:GetService("HttpService")
+const RunService = game:GetService("RunService")
 
 --Require guard
 if not RunService:IsClient() then
@@ -17,13 +17,14 @@ if not RunService:IsClient() then
 end
 
 --Modules
-local Value = require("../classes/Value")
-const PacketsClient = require("../networking/PacketsClient")
-local SessionKitTypes = require("../shared/SessionKitTypes")
+const Value = require("../Value")
+const SessionKitTypes = require("../shared/SessionKitTypes")
+const PacketsClient = require("./PacketsClient")
 
 --Types
 export type SessionKitClientModule<T> = {
-    read data: Value.Value<T>
+    read data: Value.Value<T>,
+    isInitialDataLoaded: () -> boolean,
 }
 
 export type SessionKitClientPrivate<T> = SessionKitClientModule<T> & {
@@ -43,6 +44,10 @@ const function resolvePath(path: { string }): Value.Value<any>
         current = current[key]
     end
     return current
+end
+
+function SessionKitClient.isInitialDataLoaded()
+    return SessionKitClient._initialDataLoaded
 end
 
 --Initializes the session kit client module
@@ -86,19 +91,22 @@ function SessionKitClient.initialize<T>(template, options)
         target.Remove(index)
     end)
 
-    --spent 2h debugging why this yielded even though the debug print after it ran,
-    --turns out bytenet coroutine.yields after invoke for some reason. wrapped it in task.spawn and it works. i hate myself
     task.spawn(function()
-        local fetchedData = PacketsClient.SessionKit.GetData.Invoke(nil)
-        if not fetchedData then
-            return
+        local fetchedData: string? = nil
+        
+        -- Retry until valid snapshot payload arrives
+        while not fetchedData do
+            fetchedData = PacketsClient.SessionKit.GetData.Invoke(nil)
+            if not fetchedData then
+                task.wait(.5)
+            end
         end
 
-        local decodedData = HttpService:JSONDecode(fetchedData)
+        local decodedData = HttpService:JSONDecode(fetchedData or "{}")
         SessionKitClient.data(decodedData)
         
         SessionKitClient._initialDataLoaded = true
-    end)    
+    end)
 
     return SessionKitClient
 end

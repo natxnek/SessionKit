@@ -10,20 +10,33 @@
     This has not been tested in production yet, but it should be fine since it's just a wrapper
 ]]
 --Services
-local RunService = game:GetService("RunService")
+const RunService = game:GetService("RunService")
 
 --Modules
-local SessionKitServer = require("@self/core/SessionKitServer")
-local SessionKitClient = require("@self/core/SessionKitClient")
-local SessionKitTypes = require("@self/shared/SessionKitTypes")
+const Value = require("@self/Value")
+const SessionKitClient = require("@self/client/SessionKitClient")
+const SessionKitServer = require("@self/server/SessionKitServer")
+const Log = require("@self/shared/Log")
+const SessionKitTypes = require("@self/shared/SessionKitTypes")
+const Validate = require("@self/shared/Validate")
+
+--Exported types
+export type Value<T> = Value.Value<T>
+export type ValueBase<T> = Value.ValueBase<T>
 
 --The return
 return function<T>(template: T, options: SessionKitTypes.SessionKitOptions?)
-    local server = SessionKitServer :: SessionKitServer.SessionKitServerPrivate<T>
-    local client = SessionKitClient :: SessionKitClient.SessionKitClientPrivate<T>
+    const code, message = Validate.template(template) --makes sure the template is serializable
+    if code then
+        Log.error(code, message :: string, 2)
+    end
+    
+    const server = SessionKitServer :: SessionKitServer.SessionKitServerPrivate<T>
+    const client = SessionKitClient :: SessionKitClient.SessionKitClientPrivate<T>
     
     return {
         server = (if RunService:IsServer() then server.initialize(template, options) else {}) :: SessionKitServer.SessionKitServerModule<T>,
         client = (if RunService:IsClient() then client.initialize(template, options) else {}) :: SessionKitClient.SessionKitClientModule<T>,
+        template = template,
     }
 end

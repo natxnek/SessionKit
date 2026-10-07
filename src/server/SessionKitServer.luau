@@ -20,9 +20,9 @@ end
 --Modules
 const ProfileStore = require("../../ProfileStore")
 const Signal = require("../../Signal")
-local ServerSession = require("../classes/ServerSession")
-const PacketsServer = require("../networking/PacketsServer")
 local SessionKitTypes = require("../shared/SessionKitTypes")
+const PacketsServer = require("./PacketsServer")
+const ServerSession = require("./ServerSession")
 
 --Types
 export type Session<T> = ServerSession.Session<T>
@@ -179,13 +179,11 @@ function SessionKitServer.initialize(template, options)
             return nil
         end
         
-        local nillableSession = SessionKitServer._sessions[player]
-        if not nillableSession then
+        local session = SessionKitServer.awaitGetSession(player)
+        if session == nil then --idk why but `not session` makes the session nil later
             return nil
         end
 
-        --what the fuck is wrong with my intellisense, like the autocomplete is empty for the earlier session bruh
-        local session = (nillableSession :: any) :: Session<any>
         return HttpService:JSONEncode(session.profile.Data)
     end)
 

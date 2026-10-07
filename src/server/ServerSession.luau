@@ -13,8 +13,8 @@ local HttpService = game:GetService("HttpService")
 
 --Modules
 const ProfileStore = require("../../ProfileStore")
-const PacketsServer = require("../networking/PacketsServer")
-local Value = require("./Value")
+const Value = require("../Value")
+const PacketsServer = require("../server/PacketsServer")
 
 --Types
 export type ServerSessionData<T> = {

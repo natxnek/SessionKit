@@ -1,5 +1,5 @@
-option ClientOutput = "src/networking/PacketsClient.luau"
-option ServerOutput = "src/networking/PacketsServer.luau"
+option ClientOutput = "src/client/PacketsClient.luau"
+option ServerOutput = "src/server/PacketsServer.luau"
 option Casing = Pascal
 option RemoteScope = "SKIT"
 
