@@ -58,15 +58,35 @@ export type SessionKitServerPrivate<T> = SessionKitServerModule<T> & {
     initialize: (template: T, options: SessionKitTypes.SessionKitOptions?) -> SessionKitServerModule<T>,
 }
 
+--Returns the encoded json data from the given data table
+--omits the keys whose data scheme entry strictly says to not replicate initial data
+const function getEncodedInitialData<T>(data: T): string
+    if typeof(data) ~= 'table' then
+        return "{}"
+    end
+    
+    local filteredData: T? = nil
+    for key, value in data do
+        if SessionKitServer.dataScheme then
+            local entry = SessionKitServer.dataScheme[key]
+            if entry and entry.replicateInitialData == false then
+                continue
+            end
+        end
+
+       filteredData[key] = value
+    end
+
+    return HttpService:JSONEncode(filteredData)
+end
+
 --Removes the player profile and closes the profile's session
 local function removePlayer(player: Player)
-    local optionalSession = SessionKitServer._sessions and SessionKitServer._sessions[player]
-    if not optionalSession then
+    local session = SessionKitServer._sessions and SessionKitServer._sessions[player]
+    if session == nil then
         return
     end
 
-    --something's bugging out and session is nil lol
-    local session = ((optionalSession :: any) :: ServerSession.Session<any>)
     SessionKitServer._sessions[player] = nil
 
     for _, callback in SessionKitServer._connectedCallbacks.close do
@@ -187,7 +207,7 @@ function SessionKitServer.initialize(template, options)
             return nil
         end
 
-        return HttpService:JSONEncode(session.profile.Data)
+        return getEncodedInitialData(session.profile.Data)
     end)
 
     setmetatable(SessionKitServer, {
