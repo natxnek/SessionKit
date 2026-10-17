@@ -8,4 +8,14 @@
 export type SessionKitOptions = {
     storeName: string?
 }
+
+export type SessionKitDataSchemeEntry = {
+		replicateOnChange: boolean?,
+		replicateInitialValue: boolean?,
+}
+
+export type SessionKitDataScheme = {
+		[string]: SessionKitDataSchemeEntry
+}
+
 return {}
