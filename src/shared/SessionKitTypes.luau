@@ -11,12 +11,12 @@ export type SessionKitDataSchemeEntry = {
 }
 
 export type SessionKitDataScheme = {
-		[string]: SessionKitDataSchemeEntry
+    [string]: SessionKitDataSchemeEntry
 }
 
 export type SessionKitOptions = {
     storeName: string?,
-		dataScheme: SessionKitDataScheme,
+    dataScheme: SessionKitDataScheme,
 }
 
 return {}
