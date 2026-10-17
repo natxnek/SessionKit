@@ -69,7 +69,7 @@ const function getEncodedInitialData<T>(data: T): string
     for key, value in data do
         if SessionKitServer.dataScheme then
             local entry = SessionKitServer.dataScheme[key]
-            if entry and entry.replicateInitialData == false then
+            if entry and entry.replicateInitialValue == false then
                 continue
             end
         end
