@@ -5,10 +5,6 @@
 
     Shared skit types
 ]]
-export type SessionKitOptions = {
-    storeName: string?
-}
-
 export type SessionKitDataSchemeEntry = {
 		replicateOnChange: boolean?,
 		replicateInitialValue: boolean?,
@@ -16,6 +12,11 @@ export type SessionKitDataSchemeEntry = {
 
 export type SessionKitDataScheme = {
 		[string]: SessionKitDataSchemeEntry
+}
+
+export type SessionKitOptions = {
+    storeName: string?,
+		dataScheme: SessionKitDataScheme,
 }
 
 return {}
