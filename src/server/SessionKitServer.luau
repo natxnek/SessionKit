@@ -188,7 +188,7 @@ function SessionKitServer.initialize(template, options)
     }
 
     SessionKitServer._store = ProfileStore.New((options and options.storeName) and options.storeName or "default", template)
-    SessionKitServer._dataScheme = options.dataScheme
+    SessionKitServer._dataScheme = options and options.dataScheme
 
     Players.PlayerAdded:Connect(loadPlayer)
     Players.PlayerRemoving:Connect(removePlayer)
