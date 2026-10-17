@@ -65,7 +65,7 @@ const function getEncodedInitialData<T>(data: T): string
         return "{}"
     end
     
-    local filteredData: T? = nil
+    local filteredData: T? = {}
     for key, value in data do
         if SessionKitServer.dataScheme then
             local entry = SessionKitServer.dataScheme[key]
