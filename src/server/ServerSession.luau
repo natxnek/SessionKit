@@ -28,10 +28,6 @@ export type ServerSessionData<T> = {
 export type Session<T> = setmetatable<ServerSessionData<T>, typeof(ServerSession)>
 
 const function getDefaultReplicationSink(player: Player): Value.ReplicateSink
-    --this is crazy, so bytenet doesn't allow "any" types
-    --so we have to convert the a and b thing to be strings
-    --so the serializer can serialize it, so we use httpservice
-    --to encode it into json and decode it on the client
     return function(path, operation, a, b)
         local encodedValue = HttpService:JSONEncode(a)
         if operation == "Set" then
