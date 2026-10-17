@@ -52,6 +52,8 @@ export type SessionKitServerPrivate<T> = SessionKitServerModule<T> & {
 
     _awaitSignals: { [Player]: Signal.Signal<Session<T>> },
     
+		_dataScheme: SessionKitTypes.SessionKitDataScheme?,
+
     --functions
     initialize: (template: T, options: SessionKitTypes.SessionKitOptions?) -> SessionKitServerModule<T>,
 }
@@ -166,6 +168,7 @@ function SessionKitServer.initialize(template, options)
     }
 
     SessionKitServer._store = ProfileStore.New((options and options.storeName) and options.storeName or "default", template)
+		SessionKitServer._dataScheme = options.dataScheme
 
     Players.PlayerAdded:Connect(loadPlayer)
     Players.PlayerRemoving:Connect(removePlayer)
