@@ -52,7 +52,7 @@ export type SessionKitServerPrivate<T> = SessionKitServerModule<T> & {
 
     _awaitSignals: { [Player]: Signal.Signal<Session<T>> },
     
-    dataScheme: SessionKitTypes.SessionKitDataScheme?,
+    _dataScheme: SessionKitTypes.SessionKitDataScheme?,
 
     --functions
     initialize: (template: T, options: SessionKitTypes.SessionKitOptions?) -> SessionKitServerModule<T>,
