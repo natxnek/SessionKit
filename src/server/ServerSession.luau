@@ -55,9 +55,4 @@ function ServerSession.new<T>(profile: ProfileStore.Profile<T>, player: Player):
     return setmetatable(data, ServerSession)
 end
 
---Manually replicates the entire data table to client
-function ServerSession.replicate<T>(self: Session<T>)
-    
-end
-
 return ServerSession
