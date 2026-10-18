@@ -17,7 +17,8 @@ return function(value: ValueTypes.Value<any>): { string }
         if key == nil then
             break
         end
-        table.insert(path, 1, tostring(key))
+        
+        table.insert(path, 1, if typeof(key) == "number" then `#{key}` else tostring(key))
         current = rawget(current :: any, Constants.PARENT_KEY)
     end
     return path
