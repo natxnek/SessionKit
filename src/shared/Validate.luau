@@ -50,6 +50,8 @@ local function pathToString(path: Path, root: string?): string
     for _, key in path do
         if typeof(key) == "number" then
             out ..= `[{key}]`
+        elseif string.sub(key, 1, 1) == "#" then
+            out ..= `.{string.sub(key, 2)}`
         elseif string.match(key, "^[%a_][%w_]*$") then
             out ..= `.{key}`
         else
