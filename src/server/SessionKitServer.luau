@@ -116,6 +116,11 @@ local function loadPlayer(player: Player)
         return
     end
 
+    if player.Parent ~= game.Players then
+        profile:EndSession()
+        return
+    end
+
     profile:Reconcile()
     profile:AddUserId(player.UserId)
 
@@ -123,6 +128,7 @@ local function loadPlayer(player: Player)
         if SessionKitServer._sessions[player] then
             removePlayer(player)
         end
+        player:Kick("Your session has ended")
     end)
 
     local serverSession = ServerSession.new<<any>>(profile, player)
