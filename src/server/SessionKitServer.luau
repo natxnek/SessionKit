@@ -131,7 +131,7 @@ local function loadPlayer(player: Player)
         player:Kick("Your session has ended")
     end)
 
-    local serverSession = ServerSession.new<<any>>(profile, player)
+    local serverSession = ServerSession.new<<any>>(profile, player, SessionKitServer._dataScheme)
     SessionKitServer._sessions[player] = serverSession
 
     for _, callback in SessionKitServer._connectedCallbacks.open do
