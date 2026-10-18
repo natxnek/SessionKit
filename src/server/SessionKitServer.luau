@@ -36,7 +36,7 @@ export type SessionKitServerModule<T> = {
     --Returns a disconnect function
     onSessionClose: (callback: SessionCallback<T>) -> (() -> ()),
 
-    --Tries to fetch a session and yields until it finds one (max 15s)
+    --Tries to fetch a session and yields until it finds one (max 5s)
     awaitGetSession: (player: Player) -> Session<T>?,
 } & { [Player]: Session<T> } --Direct session querying (SessionKitServer[player]) can be nil
 
@@ -50,7 +50,7 @@ export type SessionKitServerPrivate<T> = SessionKitServerModule<T> & {
         close: { (any) -> () },
     },
 
-    _awaitSignals: { [Player]: Signal.Signal<Session<T>> },
+    _awaitSignals: { [Player]: Signal.Signal<Session<T>?> },
     
     _dataScheme: SessionKitTypes.SessionKitDataScheme?,
 
@@ -80,18 +80,64 @@ const function getEncodedInitialData<T>(data: T): string
     return HttpService:JSONEncode(filteredData)
 end
 
+--Runs the session closed callbacks
+const function runCloseCallbacks(session: Session<any>, timeout: number)
+    const callbacks = table.clone(SessionKitServer._connectedCallbacks.close)
+    if #callbacks == 0 then
+        return
+    end
+
+    local pending = #callbacks
+    local finished = false
+    local yielded = false
+    const thread = coroutine.running()
+
+    local function resume()
+        if finished then
+            return
+        end
+        finished = true
+        if yielded then
+            task.spawn(thread)
+        end
+    end
+
+    for _, callback in callbacks do
+        task.spawn(function()
+            local ok, err = pcall(callback, session)
+            if not ok then
+                warn(`[SessionKit] Close callback errored: {err}`)
+            end
+            pending -= 1
+            if pending == 0 then
+                resume()
+            end
+        end)
+    end
+
+    if not finished then
+        yielded = true
+        task.delay(timeout, resume)
+        coroutine.yield()
+    end
+end
+
 --Removes the player profile and closes the profile's session
 local function removePlayer(player: Player)
+    local awaitSignal = SessionKitServer._awaitSignals[player]
+    if awaitSignal then
+        SessionKitServer._awaitSignals[player] = nil
+        awaitSignal:Fire(nil)
+        awaitSignal:Destroy()
+    end
+
     local session = SessionKitServer._sessions and SessionKitServer._sessions[player]
     if session == nil then
         return
     end
 
     SessionKitServer._sessions[player] = nil
-
-    for _, callback in SessionKitServer._connectedCallbacks.close do
-        task.spawn(callback, session)
-    end
+    runCloseCallbacks(session, 10)
 
     if session.profile then
         session.profile:EndSession()
@@ -169,14 +215,29 @@ end
 
 --Synchronously gets the session, awaits if session hasn't been loaded yet
 function SessionKitServer.awaitGetSession<T>(player)
-    if SessionKitServer._sessions[player] then
-        return SessionKitServer._sessions[player]
+    local session = SessionKitServer._sessions[player]
+    if session then
+        return session
+    end
+    if player.Parent ~= Players then
+        return nil
     end
 
-    local awaitSignal = (SessionKitServer._awaitSignals[player] or Signal.new()) :: Signal.Signal<Session<T>>
-    SessionKitServer._awaitSignals[player] = awaitSignal
+    local awaitSignal = SessionKitServer._awaitSignals[player]
+    if not awaitSignal then
+        awaitSignal = Signal.new()
+        SessionKitServer._awaitSignals[player] = awaitSignal
 
-    return SessionKitServer._sessions[player] or awaitSignal:Wait() --double check, idk why, this can probably be removed
+        task.delay(5, function()
+            if SessionKitServer._awaitSignals[player] == awaitSignal then
+                SessionKitServer._awaitSignals[player] = nil
+                awaitSignal:Fire(nil)
+                awaitSignal:Destroy()
+            end
+        end)
+    end
+
+    return awaitSignal:Wait()
 end
 
 --Initializes the session kit server module
