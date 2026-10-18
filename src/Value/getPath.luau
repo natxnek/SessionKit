@@ -17,7 +17,7 @@ return function(value: ValueTypes.Value<any>): { string }
         if key == nil then
             break
         end
-        table.insert(path, 1, key)
+        table.insert(path, 1, tostring(key))
         current = rawget(current :: any, Constants.PARENT_KEY)
     end
     return path
