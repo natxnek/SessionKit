@@ -64,11 +64,11 @@ const function getEncodedInitialData<T>(data: T): string
     if typeof(data) ~= 'table' then
         return "{}"
     end
-    
-    local filteredData: T? = {}
+
+    local filteredData: { [any]: any } = {}
     for key, value in data do
-        if SessionKitServer.dataScheme then
-            local entry = SessionKitServer.dataScheme[key]
+        if SessionKitServer._dataScheme then
+            local entry = SessionKitServer._dataScheme[key]
             if entry and entry.replicateInitialValue == false then
                 continue
             end
