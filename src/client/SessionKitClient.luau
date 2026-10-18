@@ -55,7 +55,9 @@ const function resolvePath(path: { string }): Value.Value<any>
         if current() == nil then
             current({})
         end
-        current = current[key]
+
+        local currentKey = if string.sub(key, 1, 1) == "#" then tonumber(string.sub(key, 2)) else key
+        current = current[currentKey]
     end
     return current
 end
