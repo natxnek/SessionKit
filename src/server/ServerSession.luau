@@ -15,6 +15,7 @@ local HttpService = game:GetService("HttpService")
 const ProfileStore = require("../../ProfileStore")
 const Value = require("../Value")
 const PacketsServer = require("../server/PacketsServer")
+const SessionKitTypes = require("../shared/SessionKitTypes")
 
 --Types
 export type ServerSessionData<T> = {
@@ -27,8 +28,16 @@ export type ServerSessionData<T> = {
 
 export type Session<T> = setmetatable<ServerSessionData<T>, typeof(ServerSession)>
 
-const function getDefaultReplicationSink(player: Player): Value.ReplicateSink
+const function getDefaultReplicationSink(player: Player, scheme: SessionKitTypes.SessionKitDataScheme?): Value.ReplicateSink
     return function(path, operation, a, b)
+        local root = path[1]
+        if scheme and root ~= nil then
+            local entry = scheme[root]
+            if entry and entry.replicateOnChange == false then
+                return
+            end
+        end
+
         local encodedValue = HttpService:JSONEncode(a)
         if operation == "Set" then
             PacketsServer.SessionKit.SetValue.Fire(player, path, encodedValue)
@@ -41,11 +50,11 @@ const function getDefaultReplicationSink(player: Player): Value.ReplicateSink
 end
 
 --Constructor
-function ServerSession.new<T>(profile: ProfileStore.Profile<T>, player: Player): Session<T>
+function ServerSession.new<T>(profile: ProfileStore.Profile<T>, player: Player, scheme: SessionKitTypes.SessionKitDataScheme?): Session<T>
     local data: ServerSessionData<T> = {
         profile = profile,
         player = player,
-        data = Value.new(profile.Data, nil, nil, getDefaultReplicationSink(player)),
+        data = Value.new(profile.Data, nil, nil, getDefaultReplicationSink(player, scheme)),
         hasLoaded = false,
     }
     return setmetatable(data, ServerSession)
