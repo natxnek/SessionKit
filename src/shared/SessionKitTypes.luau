@@ -16,7 +16,7 @@ export type SessionKitDataScheme = {
 
 export type SessionKitOptions = {
     storeName: string?,
-    dataScheme: SessionKitDataScheme,
+    dataScheme: SessionKitDataScheme?,
 }
 
 return {}
