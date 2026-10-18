@@ -35,6 +35,20 @@ export type SessionKitClientPrivate<T> = SessionKitClientModule<T> & {
     initialize: <T>(template: T, options: SessionKitTypes.SessionKitOptions?) -> SessionKitClientModule<T>,
 }
 
+--Deeply clones the given table
+const function deepClone<T>(value: T): T
+    if typeof(value) ~= "table" then
+        return value
+    end
+
+    const copy: { [any]: any } = {}
+    for k, v in value :: { [any]: any } do
+        copy[k] = deepClone(v)
+    end
+
+    return copy :: any
+end
+
 const function resolvePath(path: { string }): Value.Value<any>
     local current: Value.Value<any> = SessionKitClient.data
     for _, key in path do
@@ -59,7 +73,7 @@ function SessionKitClient.initialize<T>(template, options)
     SessionKitClient._initialDataLoaded = false
 
     --wtf is happening to the solver recently bruh, how tf is that not an error
-    SessionKitClient.data = Value.new<<T>>(template)
+    SessionKitClient.data = Value.new<<T>>(deepClone(template))
 
     --any packet that arrives before the initial snapshot lands is discarded
     PacketsClient.SessionKit.SetValue.On(function(path, value)
