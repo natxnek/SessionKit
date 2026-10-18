@@ -71,9 +71,9 @@ end
 local function keyProblem(key: any): (string?, string?)
     local keyType = typeof(key)
     if keyType == "string" then
-        if RESERVED_KEYS[key] then
+        if RESERVED_KEYS[key] or string.sub(key, 1, 1) == "#" then
             return "E_RESERVED_KEY",
-                `'{key}' is a reserved name (Values expose a method or internal field with that name), rename it`
+                `'{key}' is a reserved name (Values expose a method or internal field with that name, key cannot start with a #), rename it`
         end
         if utf8.len(key) == nil then
             return "E_BAD_KEY", "the key is a string with invalid UTF-8"
