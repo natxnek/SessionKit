@@ -5,12 +5,12 @@
 
     Server version of session kit
 ]]
-local SessionKitServer = {} :: SessionKitServerPrivate<any>
+const SessionKitServer = {} :: SessionKitServerPrivate<any>
 
 --Services
 const HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+const Players = game:GetService("Players")
+const RunService = game:GetService("RunService")
 
 --Require guard
 if not RunService:IsServer() then
@@ -18,9 +18,11 @@ if not RunService:IsServer() then
 end
 
 --Modules
-const ProfileStore = require("../../ProfileStore")
-const Signal = require("../../Signal")
-local SessionKitTypes = require("../shared/SessionKitTypes")
+const ProfileStore = require("../../ProfileStore") --for prod
+-- const ProfileStore = require("@game/ServerScriptService/ServerPackages/ProfileStore") --for dev
+const Signal = require("../../Signal") --for prod
+-- const Signal = require("../../Packages/Signal") --for dev
+const SessionKitTypes = require("../shared/SessionKitTypes")
 const PacketsServer = require("./PacketsServer")
 const ServerSession = require("./ServerSession")
 
@@ -52,23 +54,24 @@ export type SessionKitServerPrivate<T> = SessionKitServerModule<T> & {
 
     _awaitSignals: { [Player]: Signal.Signal<Session<T>?> },
     
-    _dataScheme: SessionKitTypes.SessionKitDataScheme?,
+    _dataScheme: SessionKitTypes.SessionKitDataScheme<{} & T>?,
 
     --functions
-    initialize: (template: T, options: SessionKitTypes.SessionKitOptions?) -> SessionKitServerModule<T>,
+    initialize: (template: T, options: SessionKitTypes.SessionKitOptions<{} & T>?) -> SessionKitServerModule<T>,
 }
 
 --Returns the encoded json data from the given data table
 --omits the keys whose data scheme entry strictly says to not replicate initial data
-const function getEncodedInitialData<T>(data: T): string
+const function getEncodedInitialData(data: { [any]: any }): string
     if typeof(data) ~= 'table' then
         return "{}"
     end
 
     local filteredData: { [any]: any } = {}
     for key, value in data do
-        if SessionKitServer._dataScheme then
-            local entry = SessionKitServer._dataScheme[key]
+        local scheme = SessionKitServer._dataScheme :: SessionKitTypes.SessionKitDataScheme<{}>
+        if scheme then
+            local entry = (scheme :: { [any]: any })[key] :: SessionKitTypes.SessionKitDataSchemeEntry
             if entry and entry.replicateInitialValue == false then
                 continue
             end
@@ -81,25 +84,23 @@ const function getEncodedInitialData<T>(data: T): string
 end
 
 --Runs the session closed callbacks
+--this looks horrible
 const function runCloseCallbacks(session: Session<any>, timeout: number)
     const callbacks = table.clone(SessionKitServer._connectedCallbacks.close)
-    if #callbacks == 0 then
+    local pending = #callbacks
+    if pending == 0 then
         return
     end
 
-    local pending = #callbacks
-    local finished = false
-    local yielded = false
     const thread = coroutine.running()
+    local done = false
 
-    local function resume()
-        if finished then
+    local function finish()
+        if done then
             return
         end
-        finished = true
-        if yielded then
-            task.spawn(thread)
-        end
+        done = true
+        task.spawn(thread)
     end
 
     for _, callback in callbacks do
@@ -110,20 +111,17 @@ const function runCloseCallbacks(session: Session<any>, timeout: number)
             end
             pending -= 1
             if pending == 0 then
-                resume()
+                finish()
             end
         end)
     end
 
-    if not finished then
-        yielded = true
-        task.delay(timeout, resume)
-        coroutine.yield()
-    end
+    task.delay(timeout, finish)
+    coroutine.yield()
 end
 
 --Removes the player profile and closes the profile's session
-local function removePlayer(player: Player)
+const function removePlayer(player: Player)
     local awaitSignal = SessionKitServer._awaitSignals[player]
     if awaitSignal then
         SessionKitServer._awaitSignals[player] = nil
@@ -150,7 +148,7 @@ local function removePlayer(player: Player)
 end
 
 --Loads the player's session
-local function loadPlayer(player: Player)
+const function loadPlayer<T>(player: Player)
     if SessionKitServer._sessions and SessionKitServer._sessions[player] then
         return
     end
@@ -162,7 +160,7 @@ local function loadPlayer(player: Player)
         return
     end
 
-    if player.Parent ~= game.Players then
+    if player.Parent ~= game:GetService("Players") then
         profile:EndSession()
         return
     end
@@ -177,7 +175,7 @@ local function loadPlayer(player: Player)
         player:Kick("Your session has ended")
     end)
 
-    local serverSession = ServerSession.new<<any>>(profile, player, SessionKitServer._dataScheme)
+    local serverSession = ServerSession.new<<T>>(profile, player, SessionKitServer._dataScheme)
     SessionKitServer._sessions[player] = serverSession
 
     for _, callback in SessionKitServer._connectedCallbacks.open do
@@ -225,14 +223,15 @@ function SessionKitServer.awaitGetSession<T>(player)
 
     local awaitSignal = SessionKitServer._awaitSignals[player]
     if not awaitSignal then
-        awaitSignal = Signal.new()
+        local newSignal = Signal.new()
+        awaitSignal = newSignal
         SessionKitServer._awaitSignals[player] = awaitSignal
 
         task.delay(5, function()
             if SessionKitServer._awaitSignals[player] == awaitSignal then
                 SessionKitServer._awaitSignals[player] = nil
-                awaitSignal:Fire(nil)
-                awaitSignal:Destroy()
+                newSignal:Fire(nil)
+                newSignal:Destroy()
             end
         end)
     end

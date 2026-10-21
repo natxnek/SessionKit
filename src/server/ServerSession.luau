@@ -12,7 +12,8 @@ ServerSession.__index = ServerSession
 local HttpService = game:GetService("HttpService")
 
 --Modules
-const ProfileStore = require("../../ProfileStore")
+const ProfileStore = require("../../ProfileStore") --for prod
+-- const ProfileStore = require("@game/ServerScriptService/ServerPackages/ProfileStore") --for dev
 const Value = require("../Value")
 const PacketsServer = require("../server/PacketsServer")
 const SessionKitTypes = require("../shared/SessionKitTypes")
@@ -28,11 +29,12 @@ export type ServerSessionData<T> = {
 
 export type Session<T> = setmetatable<ServerSessionData<T>, typeof(ServerSession)>
 
-const function getDefaultReplicationSink(player: Player, scheme: SessionKitTypes.SessionKitDataScheme?): Value.ReplicateSink
+--Returns the default replication sink for the given player
+const function getDefaultReplicationSink<T>(player: Player, scheme: SessionKitTypes.SessionKitDataScheme<T>?): Value.ReplicateSink
     return function(path, operation, a, b)
         local root = path[1]
         if scheme and root ~= nil then
-            local entry = scheme[root]
+            local entry = scheme[root :: any]
             if entry and entry.replicateOnChange == false then
                 return
             end
@@ -50,7 +52,7 @@ const function getDefaultReplicationSink(player: Player, scheme: SessionKitTypes
 end
 
 --Constructor
-function ServerSession.new<T>(profile: ProfileStore.Profile<T>, player: Player, scheme: SessionKitTypes.SessionKitDataScheme?): Session<T>
+function ServerSession.new<T>(profile: ProfileStore.Profile<T>, player: Player, scheme: SessionKitTypes.SessionKitDataScheme<T>?): Session<T>
     local data: ServerSessionData<T> = {
         profile = profile,
         player = player,

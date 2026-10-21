@@ -10,13 +10,13 @@ export type SessionKitDataSchemeEntry = {
     replicateInitialValue: boolean?,
 }
 
-export type SessionKitDataScheme = {
-    [string]: SessionKitDataSchemeEntry
+export type SessionKitDataScheme<T> = {
+    [keyof<T>]: SessionKitDataSchemeEntry
 }
 
-export type SessionKitOptions = {
+export type SessionKitOptions<T> = {
     storeName: string?,
-    dataScheme: SessionKitDataScheme?,
+    dataScheme: SessionKitDataScheme<T>?,
 }
 
 return {}

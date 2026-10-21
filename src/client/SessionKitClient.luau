@@ -32,13 +32,13 @@ export type SessionKitClientPrivate<T> = SessionKitClientModule<T> & {
     _initialDataLoaded: boolean,
 
     --functions
-    initialize: <T>(template: T, options: SessionKitTypes.SessionKitOptions?) -> SessionKitClientModule<T>,
+    initialize: <T>(template: T, options: SessionKitTypes.SessionKitOptions<T>?) -> SessionKitClientModule<T>,
 }
 
 --Deeply clones the given table
 const function deepClone<T>(value: T): T
     if typeof(value) ~= "table" then
-        return value
+        return value :: any
     end
 
     const copy: { [any]: any } = {}
@@ -74,10 +74,11 @@ function SessionKitClient.initialize<T>(template, options)
     SessionKitClient._loaded = true
     SessionKitClient._initialDataLoaded = false
 
-    --wtf is happening to the solver recently bruh, how tf is that not an error
+    --how tf is that not an error
     SessionKitClient.data = Value.new<<T>>(deepClone(template))
 
     --any packet that arrives before the initial snapshot lands is discarded
+    --honestly idk if that's a bad thing, if it is please open a pull request/issue
     PacketsClient.SessionKit.SetValue.On(function(path, value)
         if not SessionKitClient._initialDataLoaded then
             return
@@ -110,7 +111,7 @@ function SessionKitClient.initialize<T>(template, options)
     task.spawn(function()
         local fetchedData: string? = nil
         
-        -- Retry until valid snapshot payload arrives
+        --retry until valid snapshot payload arrives
         while not fetchedData do
             fetchedData = PacketsClient.SessionKit.GetData.Invoke(nil)
             if not fetchedData then

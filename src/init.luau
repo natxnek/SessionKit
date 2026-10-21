@@ -25,7 +25,7 @@ export type Value<T> = Value.Value<T>
 export type ValueBase<T> = Value.ValueBase<T>
 
 --The return
-return function<T>(template: T, options: SessionKitTypes.SessionKitOptions?)
+return function<T>(template: T, options: SessionKitTypes.SessionKitOptions<T>?)
     const code, message = Validate.template(template) --makes sure the template is serializable
     if code then
         Log.error(code, message :: string, 2)
