@@ -29,14 +29,18 @@ const ServerSession = require("./ServerSession")
 --Types
 export type Session<T> = ServerSession.Session<T>
 export type SessionCallback<T> = (session: Session<T>) -> ()
+export type SessionCallbackData<T> = {
+    callback: SessionCallback<T>,
+    priority: number,
+}
 export type SessionKitServerModule<T> = {
     --Registers a callback fired whenever a session loads
     --Returns a disconnect function
-    onSessionOpen: (callback: SessionCallback<T>) -> (() -> ()),
+    onSessionOpen: (callback: SessionCallback<T>, priority: number?) -> (() -> ()),
 
     --Registers a callback fired whenever a session closes and player is leaving
     --Returns a disconnect function
-    onSessionClose: (callback: SessionCallback<T>) -> (() -> ()),
+    onSessionClose: (callback: SessionCallback<T>, priority: number?) -> (() -> ()),
 
     --Tries to fetch a session and yields until it finds one (max 5s)
     awaitGetSession: (player: Player) -> Session<T>?,
@@ -48,8 +52,8 @@ export type SessionKitServerPrivate<T> = SessionKitServerModule<T> & {
     _sessions: { [Player]: Session<T> },
 
     _connectedCallbacks: {
-        open: { (any) -> () },
-        close: { (any) -> () },
+        open: { SessionCallbackData<any> },
+        close: { SessionCallbackData<any> },
     },
 
     _awaitSignals: { [Player]: Signal.Signal<Session<T>?> },
@@ -83,6 +87,31 @@ const function getEncodedInitialData(data: { [any]: any }): string
     return HttpService:JSONEncode(filteredData)
 end
 
+--Inserts the callback sorted by priority (highest first), after any with the same priority
+--Returns a disconnect function
+const function addCallback(list: { SessionCallbackData<any> }, callback: SessionCallback<any>, priority: number?): () -> ()
+    const data: SessionCallbackData<any> = {
+        callback = callback,
+        priority = priority or 0,
+    }
+
+    local index = #list + 1
+    for i, other in list do
+        if other.priority < data.priority then
+            index = i
+            break
+        end
+    end
+    table.insert(list, index, data)
+
+    return function()
+        local found = table.find(list, data)
+        if found then
+            table.remove(list, found)
+        end
+    end
+end
+
 --Runs the session closed callbacks
 --this looks horrible
 const function runCloseCallbacks(session: Session<any>, timeout: number)
@@ -103,9 +132,9 @@ const function runCloseCallbacks(session: Session<any>, timeout: number)
         task.spawn(thread)
     end
 
-    for _, callback in callbacks do
+    for _, data in callbacks do
         task.spawn(function()
-            local ok, err = pcall(callback, session)
+            local ok, err = pcall(data.callback, session)
             if not ok then
                 warn(`[SessionKit] Close callback errored: {err}`)
             end
@@ -178,8 +207,8 @@ const function loadPlayer<T>(player: Player)
     local serverSession = ServerSession.new<<T>>(profile, player, SessionKitServer._dataScheme)
     SessionKitServer._sessions[player] = serverSession
 
-    for _, callback in SessionKitServer._connectedCallbacks.open do
-        task.spawn(callback, serverSession)
+    for _, data in SessionKitServer._connectedCallbacks.open do
+        task.spawn(data.callback, serverSession)
     end
 
     local awaitSignal = SessionKitServer._awaitSignals[player]
@@ -190,25 +219,13 @@ const function loadPlayer<T>(player: Player)
 end
 
 --Registers a session open callback
-function SessionKitServer.onSessionOpen(callback)
-    table.insert(SessionKitServer._connectedCallbacks.open, callback)
-    return function()
-        local index = table.find(SessionKitServer._connectedCallbacks.open, callback)
-        if index then
-            table.remove(SessionKitServer._connectedCallbacks.open, index)
-        end
-    end
+function SessionKitServer.onSessionOpen(callback, priority)
+    return addCallback(SessionKitServer._connectedCallbacks.open, callback, priority)
 end
 
 --Registers a session close callback
-function SessionKitServer.onSessionClose(callback)
-    table.insert(SessionKitServer._connectedCallbacks.close, callback)
-    return function()
-        local index = table.find(SessionKitServer._connectedCallbacks.close, callback)
-        if index then
-            table.remove(SessionKitServer._connectedCallbacks.close, index)
-        end
-    end
+function SessionKitServer.onSessionClose(callback, priority)
+    return addCallback(SessionKitServer._connectedCallbacks.close, callback, priority)
 end
 
 --Synchronously gets the session, awaits if session hasn't been loaded yet
